@@ -1,0 +1,17 @@
+# 训练结果
+runs/
+weights/
+
+# 模型文件
+*.pt
+*.onnx
+*.engine
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 日志和生成图片
+*.csv
+*.png
+*.jpg
