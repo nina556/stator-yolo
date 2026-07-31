@@ -1,4 +1,4 @@
-# 训练结果
+# 训练、推理和导出结果
 runs/
 weights/
 
@@ -7,13 +7,25 @@ weights/
 *.onnx
 *.engine
 
+# 本地采集、标注和数据集内容（仅保留仓库中的 .gitkeep）
+data/frames/raw/*
+!data/frames/raw/.gitkeep
+data/depth/raw/*
+!data/depth/raw/.gitkeep
+data/raw_videos/*
+!data/raw_videos/.gitkeep
+data/labeling/export/
+data/dataset/images/
+data/dataset/labels/
+data/manifests/*.csv
+
 # Python 缓存
 __pycache__/
 *.pyc
 .venv/
 *.egg-info/
 
-# 日志和生成图片
+# 日志和生成文件
 *.csv
 *.log
 *.png

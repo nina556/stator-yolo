@@ -46,13 +46,19 @@
     <section class="workspace">
       <div class="toolbar">
         <div>
-          <span class="tool-hint">按住鼠标拖拽框选定子</span>
+          <span class="tool-hint">左键框选 · 滚轮缩放 · 右键拖动</span>
           <span id="imageMeta"></span>
         </div>
         <div class="actions">
+          <div class="zoom-controls" aria-label="图片缩放">
+            <button id="zoomOutButton" title="缩小">−</button>
+            <button id="zoomResetButton" title="适应窗口"><span id="zoomValue">100%</span></button>
+            <button id="zoomInButton" title="放大">＋</button>
+          </div>
           <button id="deleteButton" class="danger">删除图片</button>
           <button id="undoButton">撤销</button>
           <button id="clearButton">清空</button>
+          <button id="inferButton">模型检测</button>
           <button id="saveButton" class="primary">保存标签</button>
           <button id="saveNextButton" class="accent">保存并下一张 →</button>
         </div>
@@ -72,6 +78,19 @@
       </footer>
     </section>
   </main>
+  <section id="inferPanel" class="infer-panel" hidden>
+    <div class="infer-dialog">
+      <div class="panel-title">
+        <div>
+          <strong>模型检测效果</strong>
+          <div id="inferModel" class="infer-model"></div>
+        </div>
+        <button id="closeInferButton">关闭</button>
+      </div>
+      <div id="inferLoading" class="infer-loading">正在使用 best.pt 检测当前图片…</div>
+      <img id="inferResult" alt="模型检测结果">
+    </div>
+  </section>
   <section id="workflowPanel" class="workflow-panel" hidden>
     <div class="workflow-head">
       <div>

@@ -76,6 +76,12 @@ aside { padding: 18px; border-right: 1px solid var(--line); overflow: hidden; di
 .tool-hint { color: var(--muted); margin-right: 12px; }
 #imageMeta { color: var(--green); }
 .actions { display: flex; gap: 8px; }
+.zoom-controls { display: flex; }
+.zoom-controls button { min-width: 36px; border-radius: 0; }
+.zoom-controls button:first-child { border-radius: 7px 0 0 7px; }
+.zoom-controls button:last-child { border-radius: 0 7px 7px 0; }
+.zoom-controls button + button { margin-left: -1px; }
+#zoomResetButton { min-width: 68px; color: var(--green); }
 button {
   padding: 8px 13px; color: var(--text); background: var(--panel-2);
   border: 1px solid var(--line); border-radius: 7px; cursor: pointer;
@@ -87,17 +93,33 @@ button.accent { color: #1c1308; background: var(--orange); border-color: var(--o
 button.danger { color: #ff8f8f; border-color: #713f46; }
 button.danger:hover { color: #fff; background: #9f3343; border-color: #c64658; }
 .stage {
-  position: relative; min-height: 0; overflow: hidden; display: grid; place-items: center;
+  position: relative; min-height: 0; overflow: hidden; display: flex;
+  user-select: none;
   background-color: #090b0c;
   background-image: linear-gradient(#15191a 1px, transparent 1px), linear-gradient(90deg, #15191a 1px, transparent 1px);
   background-size: 24px 24px;
   border: 1px solid var(--line); border-radius: 12px;
 }
-canvas { display: none; max-width: 100%; max-height: 100%; cursor: crosshair; }
-.empty-state { text-align: center; color: var(--muted); }
+canvas {
+  position: absolute; display: none; max-width: none; max-height: none;
+  transform: translate(-50%, -50%); cursor: crosshair;
+}
+.stage.panning, .stage.panning canvas { cursor: grabbing; }
+.empty-state { margin: auto; text-align: center; color: var(--muted); }
 .empty-state h2 { color: var(--text); font-size: 20px; margin: 8px 0; }
 .empty-icon { color: var(--green); font-size: 40px; }
 footer { color: var(--muted); }
+.infer-panel {
+  position: fixed; z-index: 20; inset: 0; display: grid; place-items: center;
+  padding: 30px; background: rgba(0, 0, 0, .78);
+}
+.infer-panel[hidden] { display: none; }
+.infer-dialog {
+  width: min(1200px, 94vw); max-height: 92vh; overflow: auto;
+  padding: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+.infer-dialog img { display: block; max-width: 100%; max-height: 78vh; margin: 12px auto 0; }
+.infer-model, .infer-loading { color: var(--muted); font-size: 12px; }
 .workflow-panel {
   position: fixed; z-index: 10; top: 0; right: 0; width: min(720px, 92vw); height: 100vh;
   padding: 24px; overflow: auto; background: #121718; border-left: 1px solid var(--line);

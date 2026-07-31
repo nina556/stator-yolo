@@ -42,7 +42,7 @@ def main() -> None:
     print()
     print("Project files")
     for relative in (
-        "scripts/stator_dataset_gui.py",
+        "run_web.py",
         "data/dataset.yaml",
         "runs/stator_yolov8/weights/best.pt",
         "runs/stator_yolov8/weights/best.engine",

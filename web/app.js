@@ -1,7 +1,20 @@
 const $ = (selector) => document.querySelector(selector);
 const canvas = $("#canvas");
 const ctx = canvas.getContext("2d");
-const state = { images: [], index: -1, image: null, boxes: [], drag: null };
+const state = {
+  images: [],
+  index: -1,
+  image: null,
+  boxes: [],
+  drag: null,
+  pan: null,
+  panX: null,
+  panY: null,
+  fitScale: 1,
+  zoom: 1,
+};
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 5;
 
 async function api(path, options = {}) {
   const response = await fetch(path, options);
@@ -56,6 +69,9 @@ async function loadImage(index) {
   ]);
   state.image = image;
   state.boxes = labelData.boxes;
+  state.zoom = 1;
+  state.panX = null;
+  state.panY = null;
   fitCanvas();
   renderList();
   updateNavigation();
@@ -64,12 +80,57 @@ async function loadImage(index) {
 function fitCanvas() {
   if (!state.image) return;
   const stage = $("#stage");
-  const scale = Math.min((stage.clientWidth - 24) / state.image.width, (stage.clientHeight - 24) / state.image.height, 1);
+  state.fitScale = Math.min(
+    (stage.clientWidth - 24) / state.image.width,
+    (stage.clientHeight - 24) / state.image.height,
+    1,
+  );
+  state.panX = stage.clientWidth / 2;
+  state.panY = stage.clientHeight / 2;
+  renderCanvasSize();
+}
+
+function renderCanvasSize() {
+  if (!state.image) return;
+  const scale = state.fitScale * state.zoom;
   canvas.width = Math.max(1, Math.round(state.image.width * scale));
   canvas.height = Math.max(1, Math.round(state.image.height * scale));
+  canvas.style.left = `${state.panX}px`;
+  canvas.style.top = `${state.panY}px`;
   canvas.style.display = "block";
   $("#emptyState").style.display = "none";
+  $("#zoomValue").textContent = `${Math.round(state.zoom * 100)}%`;
+  $("#zoomOutButton").disabled = state.zoom <= MIN_ZOOM;
+  $("#zoomInButton").disabled = state.zoom >= MAX_ZOOM;
   draw();
+}
+
+function setZoom(nextZoom, clientX = null, clientY = null) {
+  if (!state.image) return;
+  const stage = $("#stage");
+  const stageRect = stage.getBoundingClientRect();
+  const canvasRect = canvas.getBoundingClientRect();
+  const anchorX = clientX === null ? stageRect.left + stage.clientWidth / 2 : clientX;
+  const anchorY = clientY === null ? stageRect.top + stage.clientHeight / 2 : clientY;
+  const imageX = (anchorX - canvasRect.left) / canvasRect.width;
+  const imageY = (anchorY - canvasRect.top) / canvasRect.height;
+
+  state.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, nextZoom));
+  renderCanvasSize();
+
+  state.panX = anchorX - stageRect.left - imageX * canvas.width + canvas.width / 2;
+  state.panY = anchorY - stageRect.top - imageY * canvas.height + canvas.height / 2;
+  canvas.style.left = `${state.panX}px`;
+  canvas.style.top = `${state.panY}px`;
+}
+
+function resetZoom() {
+  if (!state.image) return;
+  const stage = $("#stage");
+  state.zoom = 1;
+  state.panX = stage.clientWidth / 2;
+  state.panY = stage.clientHeight / 2;
+  renderCanvasSize();
 }
 
 function draw() {
@@ -109,7 +170,44 @@ function pointer(event) {
   };
 }
 
+const stage = $("#stage");
+
+stage.addEventListener("pointerdown", (event) => {
+  if (event.button !== 2 || !state.image) return;
+  state.pan = {
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    panX: state.panX,
+    panY: state.panY,
+  };
+  stage.classList.add("panning");
+  stage.setPointerCapture(event.pointerId);
+  event.preventDefault();
+});
+stage.addEventListener("pointermove", (event) => {
+  if (!state.pan) return;
+  state.panX = state.pan.panX + event.clientX - state.pan.x;
+  state.panY = state.pan.panY + event.clientY - state.pan.y;
+  canvas.style.left = `${state.panX}px`;
+  canvas.style.top = `${state.panY}px`;
+  event.preventDefault();
+});
+function stopPanning(event) {
+  if (!state.pan) return;
+  if (stage.hasPointerCapture(state.pan.pointerId)) {
+    stage.releasePointerCapture(state.pan.pointerId);
+  }
+  state.pan = null;
+  stage.classList.remove("panning");
+  event?.preventDefault();
+}
+stage.addEventListener("pointerup", stopPanning);
+stage.addEventListener("pointercancel", stopPanning);
+stage.addEventListener("contextmenu", (event) => event.preventDefault());
+
 canvas.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
   const point = pointer(event);
   state.drag = { x0: point.x, y0: point.y, x1: point.x, y1: point.y };
   canvas.setPointerCapture(event.pointerId);
@@ -130,6 +228,10 @@ canvas.addEventListener("pointerup", (event) => {
   if (x1 - x0 >= 5 && y1 - y0 >= 5) {
     state.boxes.push([(x0 + x1) / 2 / canvas.width, (y0 + y1) / 2 / canvas.height, (x1 - x0) / canvas.width, (y1 - y0) / canvas.height]);
   }
+  draw();
+});
+canvas.addEventListener("pointercancel", () => {
+  state.drag = null;
   draw();
 });
 
@@ -215,7 +317,7 @@ function updateNavigation() {
   $("#position").textContent = selected ? `${state.index + 1} / ${state.images.length} · ${state.images[state.index].name}` : "尚未选择图片";
   $("#prevButton").disabled = !selected || state.index === 0;
   $("#nextButton").disabled = !selected || state.index === state.images.length - 1;
-  ["#deleteButton", "#undoButton", "#clearButton", "#saveButton", "#saveNextButton"].forEach((id) => $(id).disabled = !selected);
+  ["#deleteButton", "#undoButton", "#clearButton", "#inferButton", "#saveButton", "#saveNextButton"].forEach((id) => $(id).disabled = !selected);
 }
 
 $("#uploadInput").onchange = async (event) => {
@@ -245,6 +347,37 @@ $("#saveButton").onclick = () => save(false);
 $("#saveNextButton").onclick = () => save(true);
 $("#prevButton").onclick = () => loadImage(state.index - 1);
 $("#nextButton").onclick = () => loadImage(state.index + 1);
+$("#inferButton").onclick = async () => {
+  if (state.index < 0) return;
+  $("#inferPanel").hidden = false;
+  $("#inferLoading").style.display = "block";
+  $("#inferResult").style.display = "none";
+  $("#inferModel").textContent = "";
+  try {
+    const data = await api("/api/infer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: state.images[state.index].name, confidence: 0.25 }),
+    });
+    $("#inferModel").textContent = `模型：${data.model} · 置信度阈值：0.25`;
+    $("#inferResult").src = data.result;
+    $("#inferResult").style.display = "block";
+  } catch (error) {
+    $("#inferLoading").textContent = error.message;
+    setStatus(error.message, false);
+    return;
+  }
+  $("#inferLoading").style.display = "none";
+};
+$("#closeInferButton").onclick = () => { $("#inferPanel").hidden = true; };
+$("#zoomOutButton").onclick = () => setZoom(state.zoom / 1.25);
+$("#zoomInButton").onclick = () => setZoom(state.zoom * 1.25);
+$("#zoomResetButton").onclick = resetZoom;
+$("#stage").addEventListener("wheel", (event) => {
+  if (!state.image) return;
+  event.preventDefault();
+  setZoom(state.zoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15), event.clientX, event.clientY);
+}, { passive: false });
 $("#workflowButton").onclick = async () => {
   $("#workflowPanel").hidden = false;
   await Promise.all([refreshProjectStatus(), refreshJob()]);

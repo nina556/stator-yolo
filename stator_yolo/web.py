@@ -21,6 +21,7 @@ WEB_ROOT = ROOT / "web"
 SOURCE_DIR = ROOT / "data" / "frames" / "raw"
 EXPORT_IMAGES = ROOT / "data" / "labeling" / "export" / "images"
 EXPORT_LABELS = ROOT / "data" / "labeling" / "export" / "labels"
+WEB_INFER_RESULT = ROOT / "runs" / "infer" / "web_preview.jpg"
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -154,6 +155,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/project/status":
                 self.send_json(project_status())
                 return
+            if path == "/api/infer/result":
+                if not WEB_INFER_RESULT.exists():
+                    self.send_json({"error": "Inference result not found"}, HTTPStatus.NOT_FOUND)
+                    return
+                self.send_bytes(WEB_INFER_RESULT.read_bytes(), "image/jpeg")
+                return
             if path == "/api/job":
                 self.send_json(job_snapshot())
                 return
@@ -224,6 +231,45 @@ class Handler(BaseHTTPRequestHandler):
                     encoding="utf-8",
                 )
                 self.send_json({"ok": True, "label": str(label.relative_to(ROOT))})
+                return
+            if path == "/api/infer":
+                name = safe_name(str(payload.get("name", "")))
+                source = SOURCE_DIR / name
+                if not source.exists():
+                    raise ValueError("Source image does not exist")
+                weights = list((ROOT / "runs").glob("**/weights/best.pt"))
+                if not weights:
+                    raise ValueError("未找到训练好的 best.pt，请先完成训练")
+                model = max(weights, key=lambda item: item.stat().st_mtime)
+                confidence = float(payload.get("confidence", 0.25))
+                if not 0 <= confidence <= 1:
+                    raise ValueError("Confidence must be between 0 and 1")
+                WEB_INFER_RESULT.parent.mkdir(parents=True, exist_ok=True)
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "scripts/infer_image.py",
+                        "--model",
+                        str(model),
+                        "--image",
+                        str(source),
+                        "--output",
+                        str(WEB_INFER_RESULT),
+                        "--conf",
+                        str(confidence),
+                    ],
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if completed.returncode != 0:
+                    raise ValueError((completed.stderr or completed.stdout or "检测失败")[-2000:])
+                self.send_json({
+                    "ok": True,
+                    "model": str(model.relative_to(ROOT)),
+                    "result": f"/api/infer/result?t={time.time_ns()}",
+                })
                 return
             if path == "/api/delete":
                 name = safe_name(str(payload.get("name", "")))
@@ -305,7 +351,7 @@ class Handler(BaseHTTPRequestHandler):
                         "train",
                         "model=yolov8n.pt",
                         "data=data/dataset.yaml",
-                        "project=runs",
+                        f"project={ROOT / 'runs'}",
                         "name=stator_yolov8",
                         f"epochs={epochs}",
                         f"imgsz={image_size}",

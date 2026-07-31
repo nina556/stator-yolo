@@ -1,27 +1,27 @@
-# CSI Capture, Labeling, and Augmentation Workflow
+# Capture, Web Labeling, and Augmentation Workflow
 
 This workflow creates the first stator detection dataset from one CSI camera.
 Start with `sensor_id=0` and one class: `stator`.
 
-## GUI workflow
+## Web workflow
 
-Launch the local GUI:
+Launch the Web workspace:
 
 ```bash
-python3 scripts/stator_dataset_gui.py
+python3 run_web.py --host 0.0.0.0 --port 8000
 ```
 
-Use the tabs in order:
+Use the workflow in order:
 
-1. Capture: set `sensor_id`, resolution, FPS, duration, and sample FPS, then start and stop capture.
-2. Label: load sampled frames, draw tight boxes around each `stator`, then save labels.
-3. Dataset: validate YOLO labels, split the dataset, then augment only the training split.
-4. Train: fine-tune an official YOLO pretrained model, watch live loss and metric curves, then export `best.pt` to TensorRT `.engine`.
-5. Test: load `.engine` or `.pt` and run realtime CSI camera detection.
+1. Capture images into `data/frames/raw`.
+2. Open `http://127.0.0.1:8000`, draw tight boxes around each stator, and save.
+3. Open “数据与训练”, validate labels, split the dataset, and optionally augment the training split.
+4. Train the model and test the current image with the generated `best.pt`.
+5. Export `best.pt` to TensorRT only when deploying to the target device.
 
-The GUI writes the same project directories used by the command-line workflow:
+The workflow uses these project directories:
 
-- sampled frames: `data/frames/raw/<session_id>/`
+- sampled frames: `data/frames/raw/`
 - raw videos: `data/raw_videos/`
 - YOLO export: `data/labeling/export/images` and `data/labeling/export/labels`
 - training dataset: `data/dataset/`
@@ -63,17 +63,7 @@ python3 scripts/capture_csi_session.py \
   --sample-fps 2
 ```
 
-## 2. Prepare images for labeling
-
-Create a flat image bundle for CVAT or Label Studio.
-
-```bash
-python3 scripts/prepare_labeling_bundle.py \
-  --frames-dir data/frames/raw \
-  --output-dir data/labeling/bundle
-```
-
-## 3. Label the stator
+## 2. Label the stator
 
 Create one detection class:
 
@@ -104,7 +94,7 @@ class_id x_center y_center width height
 
 Coordinates are normalized to `[0, 1]`.
 
-## 4. Validate labels
+## 3. Validate labels
 
 ```bash
 python3 scripts/check_yolo_labels.py \
@@ -114,7 +104,7 @@ python3 scripts/check_yolo_labels.py \
 
 Fix all missing labels, malformed rows, or out-of-range coordinates before training.
 
-## 5. Split the dataset
+## 4. Split the dataset
 
 For the first local smoke test, this random split is acceptable:
 
@@ -131,7 +121,7 @@ python3 scripts/split_dataset.py \
 For real model evaluation, split by session so neighboring frames do not leak
 between train and validation.
 
-## 6. Augment the training split
+## 5. Augment the training split
 
 If `albumentations` is installed, the script uses bbox-aware rotation and blur
 augmentation. Otherwise it falls back to OpenCV image-only augmentation that
@@ -146,7 +136,7 @@ python3 scripts/augment_dataset.py \
 Only `images/train` and `labels/train` are augmented. Validation and test data
 must stay unmodified.
 
-## 7. First acceptance check
+## 6. First acceptance check
 
 Before training, confirm:
 
