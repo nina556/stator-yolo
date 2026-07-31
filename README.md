@@ -17,6 +17,15 @@
 
 推荐使用包入口，不要直接记一堆脚本：
 
+浏览器标注界面（本机训练环境不是必需的）：
+
+```bash
+python3 run_web.py
+```
+
+然后访问 `http://127.0.0.1:8000`。页面支持导入图片、框选定子并保存
+YOLO 标签到 `data/labeling/export/labels`。
+
 ```bash
 python3 -m stator_yolo.cli gui
 ```

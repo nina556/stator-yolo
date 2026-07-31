@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stator YOLO 标注台</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">STATOR · DATASET STUDIO</p>
+      <h1>定子视觉标注台</h1>
+    </div>
+    <div class="status"><span id="statusDot"></span><span id="status">正在连接…</span></div>
+  </header>
+
+  <main>
+    <aside>
+      <section class="panel intro">
+        <p class="section-label">数据进度</p>
+        <div class="progress-row"><strong id="progress">0 / 0</strong><span>已标注</span></div>
+        <div class="progress-track"><div id="progressBar"></div></div>
+      </section>
+
+      <section class="panel">
+        <label class="upload">
+          <input id="uploadInput" type="file" accept="image/*" multiple>
+          <span>＋ 导入图片</span>
+          <small>JPG、PNG、WEBP、BMP</small>
+        </label>
+      </section>
+
+      <section class="panel image-list-panel">
+        <div class="panel-title">
+          <span>图片列表</span>
+          <button id="refreshButton" class="icon-button" title="刷新">↻</button>
+        </div>
+        <div id="imageList" class="image-list"></div>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <div class="toolbar">
+        <div>
+          <span class="tool-hint">按住鼠标拖拽框选定子</span>
+          <span id="imageMeta"></span>
+        </div>
+        <div class="actions">
+          <button id="undoButton">撤销</button>
+          <button id="clearButton">清空</button>
+          <button id="saveButton" class="primary">保存标签</button>
+          <button id="saveNextButton" class="accent">保存并下一张 →</button>
+        </div>
+      </div>
+      <div id="stage" class="stage">
+        <canvas id="canvas"></canvas>
+        <div id="emptyState" class="empty-state">
+          <div class="empty-icon">▣</div>
+          <h2>导入图片开始标注</h2>
+          <p>框选结果将保存为标准 YOLO 标签格式。</p>
+        </div>
+      </div>
+      <footer>
+        <button id="prevButton">← 上一张</button>
+        <span id="position">尚未选择图片</span>
+        <button id="nextButton">下一张 →</button>
+      </footer>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

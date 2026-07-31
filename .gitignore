@@ -10,8 +10,10 @@ weights/
 # Python 缓存
 __pycache__/
 *.pyc
+.venv/
 
 # 日志和生成图片
 *.csv
+*.log
 *.png
 *.jpg
