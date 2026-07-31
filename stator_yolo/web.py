@@ -4,6 +4,10 @@ import argparse
 import base64
 import json
 import shutil
+import subprocess
+import sys
+import threading
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -29,6 +33,73 @@ MIME_TYPES = {
     ".bmp": "image/bmp",
     ".webp": "image/webp",
 }
+JOB_LOCK = threading.Lock()
+JOB: dict[str, object] = {
+    "process": None,
+    "name": "",
+    "status": "idle",
+    "log": "",
+    "started_at": None,
+    "returncode": None,
+}
+
+
+def file_count(path: Path, suffixes: set[str]) -> int:
+    if not path.exists():
+        return 0
+    return sum(1 for item in path.iterdir() if item.is_file() and item.suffix.lower() in suffixes)
+
+
+def project_status() -> dict[str, object]:
+    dataset = ROOT / "data" / "dataset"
+    return {
+        "export": {
+            "images": file_count(EXPORT_IMAGES, IMAGE_SUFFIXES),
+            "labels": file_count(EXPORT_LABELS, {".txt"}),
+        },
+        "dataset": {
+            split: {
+                "images": file_count(dataset / "images" / split, IMAGE_SUFFIXES),
+                "labels": file_count(dataset / "labels" / split, {".txt"}),
+            }
+            for split in ("train", "val", "test")
+        },
+    }
+
+
+def job_snapshot() -> dict[str, object]:
+    with JOB_LOCK:
+        return {key: value for key, value in JOB.items() if key != "process"}
+
+
+def run_job(name: str, command: list[str]) -> None:
+    with JOB_LOCK:
+        process = JOB.get("process")
+        if isinstance(process, subprocess.Popen) and process.poll() is None:
+            raise ValueError(f"任务“{JOB['name']}”正在运行")
+        JOB.update(name=name, status="running", log="", started_at=time.time(), returncode=None)
+        process = subprocess.Popen(
+            command,
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        JOB["process"] = process
+
+    def collect() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            with JOB_LOCK:
+                JOB["log"] = (str(JOB["log"]) + line)[-100_000:]
+        returncode = process.wait()
+        with JOB_LOCK:
+            JOB["returncode"] = returncode
+            JOB["status"] = "completed" if returncode == 0 else "failed"
+            JOB["process"] = None
+
+    threading.Thread(target=collect, daemon=True).start()
 
 
 def safe_name(value: str) -> str:
@@ -79,6 +150,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/images":
                 self.send_json({"images": list_images()})
+                return
+            if path == "/api/project/status":
+                self.send_json(project_status())
+                return
+            if path == "/api/job":
+                self.send_json(job_snapshot())
                 return
             if path.startswith("/api/image/"):
                 name = safe_name(path.removeprefix("/api/image/"))
@@ -157,6 +234,96 @@ class Handler(BaseHTTPRequestHandler):
                 (EXPORT_IMAGES / name).unlink(missing_ok=True)
                 (EXPORT_LABELS / f"{Path(name).stem}.txt").unlink(missing_ok=True)
                 self.send_json({"ok": True, "name": name})
+                return
+            if path == "/api/dataset/validate":
+                run_job(
+                    "检查标签",
+                    [
+                        sys.executable,
+                        "scripts/check_yolo_labels.py",
+                        "--images-dir",
+                        "data/labeling/export/images",
+                        "--labels-dir",
+                        "data/labeling/export/labels",
+                    ],
+                )
+                self.send_json({"ok": True})
+                return
+            if path == "/api/dataset/split":
+                run_job(
+                    "划分数据集",
+                    [
+                        sys.executable,
+                        "scripts/split_dataset.py",
+                        "--images-dir",
+                        "data/labeling/export/images",
+                        "--labels-dir",
+                        "data/labeling/export/labels",
+                        "--output-dir",
+                        "data/dataset",
+                        "--train-ratio",
+                        "0.8",
+                        "--val-ratio",
+                        "0.1",
+                        "--test-ratio",
+                        "0.1",
+                    ],
+                )
+                self.send_json({"ok": True})
+                return
+            if path == "/api/dataset/augment":
+                copies = int(payload.get("copies", 2))
+                if not 1 <= copies <= 10:
+                    raise ValueError("增强份数必须在 1 到 10 之间")
+                run_job(
+                    "增强训练集",
+                    [
+                        sys.executable,
+                        "scripts/augment_dataset.py",
+                        "--dataset-dir",
+                        "data/dataset",
+                        "--copies-per-image",
+                        str(copies),
+                    ],
+                )
+                self.send_json({"ok": True})
+                return
+            if path == "/api/train":
+                epochs = int(payload.get("epochs", 100))
+                batch = int(payload.get("batch", 8))
+                image_size = int(payload.get("image_size", 640))
+                if not 1 <= epochs <= 1000 or not 1 <= batch <= 128 or image_size not in {320, 416, 512, 640, 768, 960, 1280}:
+                    raise ValueError("训练参数超出允许范围")
+                yolo = Path(sys.executable).parent / "yolo"
+                if not yolo.exists():
+                    raise ValueError("未安装 Ultralytics YOLO")
+                run_job(
+                    "训练模型",
+                    [
+                        str(yolo),
+                        "detect",
+                        "train",
+                        "model=yolov8n.pt",
+                        "data=data/dataset.yaml",
+                        "project=runs",
+                        "name=stator_yolov8",
+                        f"epochs={epochs}",
+                        f"imgsz={image_size}",
+                        f"batch={batch}",
+                        "device=0",
+                        "pretrained=True",
+                        "workers=4",
+                    ],
+                )
+                self.send_json({"ok": True})
+                return
+            if path == "/api/job/stop":
+                with JOB_LOCK:
+                    process = JOB.get("process")
+                    if isinstance(process, subprocess.Popen) and process.poll() is None:
+                        process.terminate()
+                        JOB["status"] = "stopping"
+                self.send_json({"ok": True})
                 return
             self.send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
         except (ValueError, OSError, json.JSONDecodeError, base64.binascii.Error) as exc:

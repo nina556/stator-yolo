@@ -38,6 +38,9 @@ netsh interface portproxy delete v4tov4 `
 netsh interface portproxy delete v4tov4 `
     listenaddress=0.0.0.0 `
     listenport=8001 | Out-Null
+netsh interface portproxy delete v4tov4 `
+    listenaddress=0.0.0.0 `
+    listenport=8000 | Out-Null
 netsh interface portproxy add v4tov4 `
     listenaddress=0.0.0.0 `
     listenport=8001 `

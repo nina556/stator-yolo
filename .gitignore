@@ -11,6 +11,7 @@ weights/
 __pycache__/
 *.pyc
 .venv/
+*.egg-info/
 
 # 日志和生成图片
 *.csv

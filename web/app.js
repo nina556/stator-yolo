@@ -175,6 +175,41 @@ async function deleteCurrent() {
   setStatus(`已删除 ${name}`);
 }
 
+async function refreshProjectStatus() {
+  const data = await api("/api/project/status");
+  const cards = [
+    ["标注导出", `${data.export.images} 图 / ${data.export.labels} 标签`],
+    ["训练集", `${data.dataset.train.images} 图 / ${data.dataset.train.labels} 标签`],
+    ["验证集", `${data.dataset.val.images} 图 / ${data.dataset.val.labels} 标签`],
+    ["测试集", `${data.dataset.test.images} 图 / ${data.dataset.test.labels} 标签`],
+  ];
+  $("#datasetStats").innerHTML = cards.map(([label, value]) =>
+    `<div class="stat-card"><span>${label}</span><strong>${value}</strong></div>`
+  ).join("");
+}
+
+async function startJob(path, payload = {}) {
+  await api(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await refreshJob();
+}
+
+async function refreshJob() {
+  const job = await api("/api/job");
+  const labels = { idle: "空闲", running: "运行中", completed: "已完成", failed: "失败", stopping: "正在停止" };
+  $("#jobTitle").textContent = job.name || "任务日志";
+  $("#jobState").textContent = labels[job.status] || job.status;
+  $("#jobLog").textContent = job.log || "尚未运行任务。";
+  $("#jobLog").scrollTop = $("#jobLog").scrollHeight;
+  const busy = ["running", "stopping"].includes(job.status);
+  $("#stopJobButton").disabled = !busy;
+  document.querySelectorAll("[data-job], #augmentButton, #trainButton").forEach((button) => button.disabled = busy);
+  if (!busy) await refreshProjectStatus();
+}
+
 function updateNavigation() {
   const selected = state.index >= 0;
   $("#position").textContent = selected ? `${state.index + 1} / ${state.images.length} · ${state.images[state.index].name}` : "尚未选择图片";
@@ -210,6 +245,26 @@ $("#saveButton").onclick = () => save(false);
 $("#saveNextButton").onclick = () => save(true);
 $("#prevButton").onclick = () => loadImage(state.index - 1);
 $("#nextButton").onclick = () => loadImage(state.index + 1);
+$("#workflowButton").onclick = async () => {
+  $("#workflowPanel").hidden = false;
+  await Promise.all([refreshProjectStatus(), refreshJob()]);
+};
+$("#closeWorkflowButton").onclick = () => { $("#workflowPanel").hidden = true; };
+document.querySelectorAll("[data-job]").forEach((button) => {
+  button.onclick = () => startJob(button.dataset.job).catch((error) => setStatus(error.message, false));
+});
+$("#augmentButton").onclick = () => startJob("/api/dataset/augment", {
+  copies: Number($("#augmentCopies").value),
+}).catch((error) => setStatus(error.message, false));
+$("#trainButton").onclick = () => startJob("/api/train", {
+  epochs: Number($("#epochsInput").value),
+  batch: Number($("#batchInput").value),
+  image_size: Number($("#imageSizeInput").value),
+}).catch((error) => setStatus(error.message, false));
+$("#stopJobButton").onclick = () => startJob("/api/job/stop").catch((error) => setStatus(error.message, false));
 window.addEventListener("resize", fitCanvas);
 
 refresh().catch((error) => setStatus(error.message, false));
+setInterval(() => {
+  if (!$("#workflowPanel").hidden) refreshJob().catch((error) => setStatus(error.message, false));
+}, 1500);

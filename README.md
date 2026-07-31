@@ -1,474 +1,193 @@
-# 定子 YOLO 视觉识别工作区
+# 定子 YOLO Web 工作台
 
-本项目用于在 Jetson 上完成“定子识别”模型的完整工程流程：
+这是一个面向定子目标检测的数据标注、数据集处理、模型训练与部署项目。
 
-1. 从相机采集 RGB 图像或视频。
-2. 抽帧生成标注样本。
-3. 标注 `stator` 检测框。
-4. 校验、切分、增强数据集。
-5. 基于官方 YOLO 预训练模型微调。
-6. 监控训练日志和 loss/mAP 曲线。
-7. 将 `best.pt` 导出为 TensorRT `.engine`。
-8. 在相机视频流上实时检测定子。
+项目现在以浏览器工作台为主界面。局域网用户可以通过浏览器上传图片、框选定子、保存 YOLO 标签、处理数据集并启动 GPU 训练，不需要在每台电脑上安装 Python 或训练环境。
 
-当前相机方案已从 Jetson CSI 相机切换到 **深视 3D 相机**。YOLO 检测本身只依赖 RGB 图像；深度图、点云和相机内参可以作为后续定位/机械臂抓取扩展，不直接参与当前 YOLO 训练。
+## 当前功能
 
-## 统一入口
+网页工作台已经支持：
 
-推荐使用包入口，不要直接记一堆脚本：
+- 批量上传 JPG、PNG、WEBP、BMP 图片。
+- 浏览和切换待标注图片。
+- 鼠标拖拽绘制定子检测框。
+- 撤销、清空和保存 YOLO 标签。
+- 保存标签并自动切换到下一张。
+- 删除源图片，并同步清理对应导出图片和标签。
+- 显示标注进度。
+- 检查图片和 YOLO 标签是否匹配。
+- 按 `8:1:1` 划分训练集、验证集和测试集。
+- 对训练集执行数据增强。
+- 从网页启动和停止 YOLOv8n 训练。
+- 查看数据集数量、任务状态和实时训练日志。
 
-浏览器标注界面（本机训练环境不是必需的）：
+项目仍保留 RealSense、CSI 相机采集和推理脚本作为底层工具。旧桌面 GUI 不再是默认入口，后续功能以 Web 工作台为准。
 
-```bash
-python3 run_web.py
-```
+## 系统环境
 
-然后访问 `http://127.0.0.1:8000`。页面支持导入图片、框选定子并保存
-YOLO 标签到 `data/labeling/export/labels`。
+当前开发环境：
 
-```bash
-python3 -m stator_yolo.cli gui
-```
+- Windows 11 + WSL2
+- Ubuntu 24.04
+- Python 3.12
+- NVIDIA GeForce RTX 5060 Ti 8 GB
+- PyTorch 2.13 + CUDA 13
+- Ultralytics YOLO
 
-环境检查：
+建议配置：
 
-```bash
-python3 -m stator_yolo.cli env
-```
+- NVIDIA 显卡，显存 6 GB 以上
+- 内存 16 GB 左右
+- Python 3.10 以上
+- 20 GB 以上可用磁盘空间
 
-直接打开完整工作流 GUI：
+没有 NVIDIA GPU 也能使用图片标注和数据集处理功能，但 CPU 训练速度会明显较慢。
 
-```bash
-python3 -m stator_yolo.gui
-```
+## 安装
 
-如果你还没安装成包，也可以继续用 `scripts/stator_dataset_gui.py`，两者调用的是同一套逻辑。
-
-可选：安装为 editable 包，之后可以直接使用命令行入口：
-
-```bash
-python3 -m pip install -e .
-stator-yolo gui
-stator-yolo env
-```
-
-## 当前状态
-
-- 训练、标注、增强、TensorRT 导出流程已经可用。
-- GUI 已包含 `Capture / Label / Dataset / Train / Test` 页签。
-- GUI 的 `Capture` 和 `Test` 页均支持 `RealSense / CSI` 切换。
-- RealSense 采集会保存 RGB 彩色帧，并同步保存 16-bit 深度帧。
-- 深度图用于从 2D 检测框反查 3D 坐标，后续接机械臂手眼标定。
-- 没有连接摄像头时，GUI 仍可启动；相机相关按钮会在运行时给出错误提示，但不会阻止标注、数据集和训练页签使用。
-
-## 深视 3D 相机接口测试
-
-先用探测脚本确认相机在当前 Jetson 上暴露的接口：
+进入 WSL 项目目录：
 
 ```bash
-python3 scripts/test_deepvision_camera.py --list-only
+cd /home/nina/stator-yolo
 ```
 
-当前机器实测识别为 `Intel RealSense Depth Camera 455`，接口关系如下：
+创建并激活虚拟环境：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+安装项目及依赖：
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -e .
+```
+
+检查环境：
+
+```bash
+stator-yolo-env
+```
+
+检查 WSL 是否可以使用 NVIDIA GPU：
+
+```bash
+nvidia-smi
+python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'GPU 不可用')"
+```
+
+正常情况下应输出：
 
 ```text
-/dev/video8  彩色图，YUYV，OpenCV 可直接读取
-/dev/video2  深度图，Z16 16-bit depth，建议用 raw V4L2 或 RealSense SDK 读取
-/dev/video6  灰度/红外图，GREY/UYVY
-/dev/video3、/dev/video7、/dev/video9  元数据类节点，通常不作为图像输入
+True
+NVIDIA GeForce RTX 5060 Ti
 ```
 
-测试彩色图：
+## 启动网站
+
+激活虚拟环境后运行：
 
 ```bash
-python3 scripts/test_deepvision_camera.py \
-  --devices /dev/video8 \
-  --width 640 \
-  --height 480 \
-  --fps 30 \
-  --frames 30 \
-  --fourcc YUYV
+cd /home/nina/stator-yolo
+source .venv/bin/activate
+python run_web.py --host 0.0.0.0 --port 8000
 ```
 
-测试深度图：
+也可以使用安装后的命令：
 
 ```bash
-python3 scripts/test_deepvision_camera.py \
-  --devices /dev/video2 \
-  --width 640 \
-  --height 480 \
-  --frames 5 \
-  --fourcc Z16 \
-  --raw-v4l2
+stator-yolo-web --host 0.0.0.0 --port 8000
 ```
 
-输出会保存在：
+看到下面的信息代表服务已经启动：
 
 ```text
-runs/deepvision_probe/
-├── video8_frame.png             # 彩色样张
-├── video2_z16.raw               # 原始 Z16 深度流
-├── video2_depth_z16.npy         # 第一帧深度矩阵，uint16
-├── video2_depth_z16.png         # 16-bit 深度 PNG
-└── video2_depth_preview.png     # 深度伪彩预览
+Stator YOLO Web: http://0.0.0.0:8000
+Press Ctrl+C to stop the server.
 ```
 
-注意：当前系统没有安装 `pyrealsense2`、`pyorbbecsdk`、`openni`、`depthai` 等 3D 相机 SDK 的 Python 模块。第一版可以用 `/dev/video8` 采集 RGB 做 YOLO；如果要做 RGB-D 同步和相机内参/深度尺度读取，建议后续接入 RealSense SDK 或厂商 SDK。
-
-如果你不接相机，也可以先把项目当作离线标注/训练工作流来用：
-
-```bash
-python3 -m stator_yolo.gui
-```
-
-Capture/Test 页会在没有相机时显示错误日志，但 Label/Dataset/Train 仍可正常工作。
-
-## RealSense SDK 实时 RGB-D 流
-
-由于当前相机被系统识别为 `Intel RealSense Depth Camera 455`，推荐使用 RealSense SDK 做正式 RGB-D 采集。SDK 相比 V4L2 的优势是：
-
-- 同步获取 color/depth frame。
-- 可把 depth 对齐到 color。
-- 可读取 depth scale、相机内参和设备信息。
-- 后续可以从 YOLO 检测框中心点反查深度，再计算 3D 坐标。
-
-本项目提供 SDK 版测试脚本：
-
-```bash
-python3 scripts/test_realsense_sdk_stream.py \
-  --color-width 640 \
-  --color-height 480 \
-  --color-fps 30 \
-  --depth-width 640 \
-  --depth-height 480 \
-  --depth-fps 30 \
-  --save-every 30
-```
-
-如果当前没有图形界面预览，可以关闭窗口显示：
-
-```bash
-python3 scripts/test_realsense_sdk_stream.py \
-  --color-width 640 \
-  --color-height 480 \
-  --color-fps 30 \
-  --depth-width 640 \
-  --depth-height 480 \
-  --depth-fps 30 \
-  --frames 300 \
-  --save-every 30 \
-  --no-preview
-```
-
-查看 SDK 实际支持的分辨率/FPS：
-
-```bash
-python3 scripts/test_realsense_sdk_stream.py --list-profiles
-```
-
-当前机器实测 SDK 状态：
+本机访问：
 
 ```text
-pyrealsense2: 2.58.2
-device: Intel RealSense D455
-firmware: 5.15.1
-usb_type: 2.1
-depth_scale_m_per_unit: 0.00100000
+http://127.0.0.1:8000
 ```
 
-当前稳定可用组合：
+运行期间不要关闭 WSL 终端，也不要按 `Ctrl+C`。
 
-```bash
-python3 scripts/test_realsense_sdk_stream.py \
-  --color-width 640 \
-  --color-height 480 \
-  --color-fps 30 \
-  --depth-width 640 \
-  --depth-height 480 \
-  --depth-fps 30 \
-  --frames 300 \
-  --save-every 30 \
-  --no-preview
-```
+## 局域网部署
 
-低分辨率 60FPS 组合可以启动：
-
-```bash
-python3 scripts/test_realsense_sdk_stream.py \
-  --color-width 424 \
-  --color-height 240 \
-  --color-fps 60 \
-  --depth-width 480 \
-  --depth-height 270 \
-  --depth-fps 60 \
-  --frames 300 \
-  --save-every 30 \
-  --no-preview
-```
-
-不要直接使用：
-
-```bash
---width 1920 --height 1080 --fps 60
-```
-
-当前 D455 SDK profile 没有暴露 `1920x1080@60`，同时 depth 也不支持这个分辨率/FPS。`1280x720` 彩色 profile 虽然可枚举，但当前 `usb_type: 2.1` 状态下 RGB-D 同步取流会出现等不到帧；如果必须使用更高分辨率，应先确认相机连接到 USB3 口并使用合格 USB3 数据线。
-
-如果画面方向和安装方向不一致，可以加：
-
-```bash
---flip vertical
-```
-
-可选值：
+当前局域网入口：
 
 ```text
-none / vertical / horizontal / both
+http://192.168.10.224:8001
 ```
 
-输出目录：
+网络链路：
 
 ```text
-runs/realsense_sdk_probe/
-├── frame_000000_color.jpg
-├── frame_000000_depth_z16.png
-├── frame_000000_depth_preview.png
-└── manifest.csv
+局域网浏览器
+    ↓
+Windows 192.168.10.224:8001
+    ↓
+Windows portproxy
+    ↓
+WSL 127.0.0.1:8000
+    ↓
+Stator YOLO Web
 ```
 
-`manifest.csv` 会记录帧号、SDK 时间戳、RGB 路径、深度路径、中心点深度、有效最小/最大深度。
+首次部署时，以管理员身份打开 Windows PowerShell：
 
-如果 SDK Python binding 未安装，脚本会先报：
+```powershell
+cd "\\wsl$\Ubuntu-24.04\home\nina\stator-yolo"
+powershell -ExecutionPolicy Bypass -File .\deploy_intranet.ps1
+```
+
+部署脚本会：
+
+- 开放 Windows TCP 8001 入站规则。
+- 限制访问来源为 `192.168.10.0/24`。
+- 建立 `8001 → 8000` 端口转发。
+- 注册登录后启动网站的 Windows 计划任务。
+
+其他用户需要连接同一个局域网，并访问：
 
 ```text
-Missing dependency: pyrealsense2.
+http://192.168.10.224:8001
 ```
 
-需要先安装和当前 JetPack/TensorRT 环境匹配的 `librealsense` 与 Python binding。Jetson 上不建议随意安装不匹配的 pip wheel，优先使用 Intel/相机厂商提供的 Jetson 兼容安装方式。
+如果使用访客 Wi-Fi、路由器开启了客户端隔离，或者电脑 IP 已经变化，其他设备可能无法访问。
 
-## RealSense RGB-D 双视图 GUI
+### 安全说明
 
-实时查看 2D 彩色图和 3D 深度视角：
+当前网站没有账号、密码和权限系统。能够访问网站的用户也可以：
 
-```bash
-python3 scripts/realsense_rgbd_viewer_gui.py \
-  --color-width 640 \
-  --color-height 480 \
-  --color-fps 30 \
-  --depth-width 640 \
-  --depth-height 480 \
-  --depth-fps 30
-```
+- 上传或删除图片。
+- 修改标签。
+- 划分和增强数据集。
+- 启动或停止训练。
 
-GUI 左侧显示 RGB 彩色流，右侧默认显示由深度图和相机内参生成的 3D 点云视角。右侧也可以切换为深度伪彩图。
+因此只应在可信局域网中使用，不要直接映射到互联网。
 
-GUI 控件：
+## 标注流程
 
-- `Start / Stop`：启动或停止 RealSense RGB-D 流。
-- `Save Snapshot`：保存当前 RGB、16-bit 深度图和深度预览图到 `runs/realsense_rgbd_viewer/`。
-- `Right View`：切换右侧 `3d` 或 `depth`。
-- `Flip`：按安装方向翻转 RGB 和深度帧。
-- `Point Step`：3D 点云采样间隔，数值越小点越密，但越吃 CPU。
-- `Min Depth / Max Depth`：过滤深度范围。
-- `Yaw / Pitch`：调整右侧 3D 视角。
+### 1. 上传图片
 
-如果相机画面倒置：
+打开网站，点击左侧“导入图片”，选择一张或多张图片。
 
-```bash
-python3 scripts/realsense_rgbd_viewer_gui.py \
-  --color-width 640 \
-  --color-height 480 \
-  --color-fps 30 \
-  --depth-width 640 \
-  --depth-height 480 \
-  --depth-fps 30 \
-  --flip vertical
-```
-
-当前 GUI 使用 Tkinter + OpenCV + RealSense SDK，不依赖 Open3D。3D 视角是从深度图实时采样并投影出来的轻量点云预览，适合调试安装视角、深度范围和后续定子定位流程。
-
-## RealSense 接入 YOLO 实时识别
-
-YOLO 仍然跑 2D RGB 图像；RealSense 深度图用于把检测框中心点转换为相机坐标系下的 3D 点。
-
-完整工作流 GUI：
-
-```bash
-python3 scripts/stator_dataset_gui.py
-```
-
-GUI 功能：
-
-- 保留原有 `Capture / Label / Dataset / Train / Test` 全流程页签。
-- 选择 `.pt` 或 `.engine` 模型。
-- 设置 RealSense color/depth 分辨率和 FPS。
-- 设置置信度、IOU、推理尺寸和 CUDA device。
-- 设置深度范围、深度中值窗口和画面翻转。
-- `Start Detection / Stop` 控制实时检测。
-- 实时画面中显示 YOLO 框、中心点、深度和相机坐标系 `x/y/z`。
-- `Test` 页默认使用 RealSense；如需旧 CSI 测试，可在 `Camera` 中切换为 `CSI`。
-
-建议优先使用这个 GUI 做现场测试；下面的命令行脚本适合无显示环境、批量测试或调试。`scripts/realsense_yolo_gui.py` 是独立 RealSense 检测界面，只用于备用调试，不包含标注、数据集和训练页签。
-
-实时预览：
-
-```bash
-python3 scripts/infer_realsense_rgbd.py \
-  --model runs/stator_yolov8/weights/best.pt \
-  --color-width 640 \
-  --color-height 480 \
-  --color-fps 30 \
-  --depth-width 640 \
-  --depth-height 480 \
-  --depth-fps 30 \
-  --conf 0.25 \
-  --device 0
-```
-
-无预览测试并保存结果：
-
-```bash
-python3 scripts/infer_realsense_rgbd.py \
-  --model runs/stator_yolov8/weights/best.pt \
-  --color-width 640 \
-  --color-height 480 \
-  --color-fps 30 \
-  --depth-width 640 \
-  --depth-height 480 \
-  --depth-fps 30 \
-  --frames 300 \
-  --save-csv \
-  --save-video \
-  --no-preview \
-  --device 0 \
-  --output-dir runs/realsense_yolo
-```
-
-输出：
+上传的源图片保存在：
 
 ```text
-runs/realsense_yolo/
-├── detections.csv
-└── realsense_yolo.mp4
+data/frames/raw/
 ```
 
-`detections.csv` 字段：
+### 2. 框选定子
 
-```text
-frame_index,timestamp_ms,class_id,class_name,confidence,
-x1,y1,x2,y2,center_x,center_y,
-depth_m,camera_x_m,camera_y_m,camera_z_m
-```
+在画布中按住鼠标拖拽，为图片中的每个定子绘制紧贴目标边界的矩形框。
 
-其中：
-
-- `x1,y1,x2,y2` 是 YOLO 在 RGB 图上的检测框。
-- `center_x,center_y` 是检测框中心像素。
-- `depth_m` 是中心点附近窗口的中位深度。
-- `camera_x_m,camera_y_m,camera_z_m` 是 SDK 内参反投影得到的相机坐标系 3D 点。
-
-机械臂抓取时，下一步需要把：
-
-```text
-camera_x_m,camera_y_m,camera_z_m
-```
-
-通过手眼标定外参转换到机械臂 `base_link` 或机器人基坐标系。
-
-## 深视 3D 相机数据约定
-
-建议每次采集以 session 为单位保存：
-
-```text
-data/
-├── raw_videos/
-│   └── <session_id>_color.mp4
-├── frames/raw/
-│   └── <session_id>/
-│       ├── <session_id>_f000000.jpg
-│       ├── <session_id>_f000001.jpg
-│       └── ...
-├── depth/raw/
-│   └── <session_id>/
-│       ├── <session_id>_f000000.png
-│       ├── <session_id>_f000001.png
-│       └── ...
-└── manifests/
-    ├── frame_manifest.csv
-    └── session_manifest.csv
-```
-
-RGB 图像用于 YOLO 训练。深度图使用 16-bit PNG 或 SDK 推荐格式保存，保持和 RGB 帧同名同序号，方便后续对齐。
-
-`frame_manifest.csv` 建议字段：
-
-```text
-session_id,camera_type,frame_index,timestamp_sec,color_path,depth_path,width,height
-```
-
-`session_manifest.csv` 建议字段：
-
-```text
-session_id,camera_type,scene,lighting,background,pose_group,occlusion_level,robot_state,notes
-```
-
-## 目录结构
-
-```text
-yolo/
-├── data/
-│   ├── raw_videos/              # 原始 RGB 视频
-│   ├── frames/raw/              # 抽帧后的 RGB 图像
-│   ├── depth/raw/               # 深视 3D 深度帧，后续定位用
-│   ├── labeling/export/images/  # 已标注 RGB 图片
-│   ├── labeling/export/labels/  # YOLO txt 标签
-│   ├── dataset/                 # train/val/test 数据集
-│   ├── dataset.yaml             # YOLO 数据集配置
-│   └── manifests/               # 采集元数据
-├── docs/
-├── export/
-├── scripts/
-├── train/
-└── runs/                        # 训练和导出结果
-```
-
-## 推荐主流程
-
-### 1. 采集深视 3D 相机数据
-
-使用深视 3D 相机 SDK 或厂商示例程序采集 RGB 视频/帧。当前项目要求至少输出 RGB 图像到：
-
-```text
-data/frames/raw/<session_id>/
-```
-
-如果 SDK 支持同步深度图，建议同时输出到：
-
-```text
-data/depth/raw/<session_id>/
-```
-
-采集建议：
-
-- 第一版先只训练 `stator` 一个类别。
-- 每个 session 只强调一种主要工况，例如光照、背景、姿态、遮挡或机械臂状态。
-- 静态场景每秒抽 1-3 帧。
-- 操作过程每秒抽 3-5 帧。
-- 第一版目标是 1000-3000 张已标注 RGB 图像。
-
-### 2. 准备标注图片
-
-如果 RGB 帧已经在 `data/frames/raw/`，可以直接使用 GUI 标注。也可以打包成平铺目录：
-
-```bash
-python3 scripts/prepare_labeling_bundle.py \
-  --frames-dir data/frames/raw \
-  --output-dir data/labeling/bundle
-```
-
-### 3. 标注定子
-
-类别固定为：
+当前只有一个类别：
 
 ```text
 0: stator
@@ -476,20 +195,16 @@ python3 scripts/prepare_labeling_bundle.py \
 
 标注规则：
 
-- 检测框紧贴可见定子边界。
-- 定子被部分遮挡但仍可识别时需要标注。
-- 运动模糊严重、无法判断边界的图片跳过。
-- 不标注反光、影子或非真实定子。
+- 框尽量贴合可见的定子边界。
+- 仍能辨认的部分遮挡定子需要标注。
+- 严重模糊、无法确认的目标不标注。
+- 不要标注倒影或与定子相似的背景物体。
 
-YOLO 标签格式：
+### 3. 保存标签
 
-```text
-class_id x_center y_center width height
-```
+点击“保存标签”或“保存并下一张”。
 
-坐标均归一化到 `[0, 1]`。
-
-标注导出目录：
+保存后生成：
 
 ```text
 data/labeling/export/
@@ -497,242 +212,291 @@ data/labeling/export/
 └── labels/
 ```
 
-### 4. 校验并切分数据集
+标签采用标准 YOLO 检测格式：
+
+```text
+class_id x_center y_center width height
+```
+
+坐标全部归一化到 `[0, 1]`。
+
+### 4. 删除图片
+
+选择图片后点击“删除图片”。确认后会同时删除：
+
+- `data/frames/raw/` 中的源图片。
+- `data/labeling/export/images/` 中的导出图片。
+- `data/labeling/export/labels/` 中对应的标签。
+
+该操作目前不可撤销。
+
+## 数据集处理
+
+点击网站右上角“数据与训练”。
+
+### 检查标签
+
+“检查标签”会验证：
+
+- 每张导出图片是否存在对应标签。
+- 每行标签是否包含五个字段。
+- 类别 ID 和坐标是否为数字。
+- 坐标是否位于 `[0, 1]`。
+
+对应命令行：
 
 ```bash
-python3 scripts/check_yolo_labels.py \
+python scripts/check_yolo_labels.py \
   --images-dir data/labeling/export/images \
   --labels-dir data/labeling/export/labels
-
-python3 scripts/split_dataset.py \
-  --images-dir data/labeling/export/images \
-  --labels-dir data/labeling/export/labels \
-  --output-dir data/dataset \
-  --train-ratio 0.8 \
-  --val-ratio 0.1 \
-  --test-ratio 0.1
 ```
 
-注意：真实评估时最好按 session 切分，不要把相邻帧同时放进 train 和 val。
+### 划分数据集
 
-### 5. 数据增强
+网页按以下比例划分：
 
-```bash
-python3 scripts/augment_dataset.py \
-  --dataset-dir data/dataset \
-  --copies-per-image 2
-```
+- 训练集：80%
+- 验证集：10%
+- 测试集：10%
 
-增强只作用于训练集：
+输出目录：
 
 ```text
-data/dataset/images/train
-data/dataset/labels/train
+data/dataset/
+├── images/
+│   ├── train/
+│   ├── val/
+│   └── test/
+└── labels/
+    ├── train/
+    ├── val/
+    └── test/
 ```
 
-如果安装了 `albumentations`，脚本会使用 bbox-aware 增强；否则自动降级为 OpenCV 图像增强，并保持 YOLO 框坐标不变。
+当前脚本是随机划分。正式评估时，建议按照采集场景或视频会话划分，避免相邻的近重复帧同时进入训练集和验证集。
 
-### 6. 训练 YOLO
+### 数据增强
 
-默认训练：
+网页可以设置每张训练图片生成的增强副本数量。
 
-```bash
-bash train/train_yolov8.sh
-```
+增强只作用于训练集，可能包含：
 
-定子在画面中较小时，建议提高输入尺寸：
+- 亮度和对比度变化。
+- 噪声。
+- 运动模糊和高斯模糊。
+- 小角度旋转。
+- CLAHE 局部对比度增强。
 
-```bash
-EPOCHS=100 IMGSZ=960 BATCH=8 DEVICE=0 \
-  bash train/train_yolov8.sh yolov8n.pt data/dataset.yaml runs stator_yolov8_v2
-```
+验证集和测试集不会被增强。
 
-显存不足时，先降低 `BATCH`，再降低 `IMGSZ`。
+## 模型训练
 
-训练输出：
+训练前必须满足：
+
+- `data/dataset/images/train` 中存在图片。
+- `data/dataset/labels/train` 中存在同名标签。
+- 验证集中存在图片和标签。
+- WSL 中 `torch.cuda.is_available()` 返回 `True`。
+
+点击网站右上角“数据与训练”，配置：
+
+- 训练轮数：首次测试建议 `10`，正式训练建议 `100`。
+- 批量大小：RTX 5060 Ti 8 GB 建议从 `8` 开始。
+- 图片尺寸：默认 `640`。
+
+首次流程测试建议：
 
 ```text
-runs/<run_name>/
+epochs = 10
+batch = 8
+image size = 640
+```
+
+正式训练建议：
+
+```text
+epochs = 100
+batch = 8
+image size = 640
+```
+
+如果出现 CUDA 显存不足，将批量大小改为 `4` 或 `2`。
+
+对应命令行：
+
+```bash
+EPOCHS=100 IMGSZ=640 BATCH=8 DEVICE=0 bash train/train_yolov8.sh
+```
+
+训练结果：
+
+```text
+runs/stator_yolov8/
+├── weights/
+│   ├── best.pt
+│   └── last.pt
 ├── results.csv
-├── results.png
-├── confusion_matrix.png
-├── val_batch0_labels.jpg
-├── val_batch0_pred.jpg
-└── weights/
-    ├── best.pt
-    └── last.pt
+└── results.png
 ```
 
-### 7. 导出 TensorRT Engine
+其中 `best.pt` 是验证指标最好的模型，通常用于后续推理和导出。
 
-必须在实际运行推理的 Jetson/TensorRT 环境上导出：
+## 推理
+
+### 图片推理
+
+```bash
+python scripts/infer_image.py \
+  --model runs/stator_yolov8/weights/best.pt \
+  --image path/to/test.jpg \
+  --output runs/infer/result.jpg \
+  --conf 0.25
+```
+
+### 视频推理
+
+```bash
+python scripts/infer_video.py \
+  --model runs/stator_yolov8/weights/best.pt \
+  --video path/to/test.mp4 \
+  --output runs/infer/result.mp4 \
+  --conf 0.25
+```
+
+### RealSense RGB-D 推理
+
+```bash
+python scripts/infer_realsense_rgbd.py \
+  --model runs/stator_yolov8/weights/best.pt
+```
+
+RealSense 推理会结合检测框中心附近的深度值，计算相机坐标系下的三维坐标。相机测试和采集细节见：
+
+- `docs/workflow.md`
+- `docs/capture_label_augment.md`
+
+## TensorRT 导出
+
+在带 NVIDIA GPU 和 TensorRT 环境的设备上运行：
 
 ```bash
 bash export/export_engine.sh runs/stator_yolov8/weights/best.pt
 ```
 
-等价命令：
+导出的 `.engine` 与设备、CUDA、TensorRT 版本密切相关。建议在最终运行推理的 Jetson 或目标设备上导出，不要假设不同设备生成的 Engine 可以直接通用。
 
-```bash
-yolo export \
-  model=runs/stator_yolov8/weights/best.pt \
-  format=engine \
-  imgsz=640 \
-  device=0 \
-  half=True \
-  simplify=True
-```
-
-输出：
+## 项目结构
 
 ```text
-runs/stator_yolov8/weights/best.engine
+stator-yolo/
+├── run_web.py                  # Web 服务启动入口
+├── deploy_intranet.ps1         # Windows 局域网部署
+├── pyproject.toml              # Python 包与依赖配置
+├── stator_yolo/
+│   ├── cli.py                  # 统一命令入口
+│   ├── env_check.py            # 环境检查
+│   ├── paths.py                # 项目目录管理
+│   └── web.py                  # Web API 与任务控制
+├── web/
+│   ├── index.html              # Web 页面
+│   ├── app.js                  # 标注和训练交互
+│   └── styles.css              # 页面样式
+├── scripts/
+│   ├── check_yolo_labels.py    # 标签检查
+│   ├── split_dataset.py        # 数据集划分
+│   ├── augment_dataset.py      # 数据增强
+│   ├── infer_image.py          # 图片推理
+│   ├── infer_video.py          # 视频推理
+│   └── infer_realsense_rgbd.py # RealSense RGB-D 推理
+├── train/
+│   └── train_yolov8.sh         # YOLO 训练
+├── export/
+│   └── export_engine.sh        # TensorRT 导出
+├── data/
+│   ├── frames/raw/             # 上传或采集的源图片
+│   ├── labeling/export/        # 已保存的图片和标签
+│   ├── dataset/                # 训练/验证/测试数据集
+│   └── dataset.yaml            # YOLO 数据集配置
+└── runs/                       # 训练、推理和导出结果
 ```
 
-TensorRT 在 `building FP16 engine` 阶段可能长时间没有新日志，只要 `yolo export` 进程仍在占用 CPU/GPU，就是正常构建。
+## 常见问题
 
-### 8. 实时检测
+### 浏览器显示 `ERR_EMPTY_RESPONSE`
 
-当前 GUI 的实时检测页仍使用 CSI 相机读取逻辑。深视 3D 相机切换后，需要把 `Test` 页的相机读取部分替换为深视 SDK RGB 帧读取。
+通常表示 Windows 的 `8001` 已打开，但 WSL 中的 Python 服务没有运行。
 
-模型推理逻辑不变：
-
-```python
-from ultralytics import YOLO
-
-model = YOLO("runs/stator_yolov8/weights/best.engine")
-result = model.predict(source=color_frame, conf=0.25, verbose=False)[0]
-annotated = result.plot()
-```
-
-也可以先使用录制好的 RGB 视频离线验证：
+启动服务：
 
 ```bash
-python3 scripts/infer_video.py \
-  --model runs/stator_yolov8/weights/best.pt \
-  --video data/raw_videos/<session_id>_color.mp4 \
-  --output runs/infer/result.mp4 \
-  --conf 0.25
+cd /home/nina/stator-yolo
+source .venv/bin/activate
+python run_web.py --host 0.0.0.0 --port 8000
 ```
 
-## GUI 使用说明
+检查 Windows 转发：
 
-启动 GUI：
-
-```bash
-python3 scripts/stator_dataset_gui.py
+```powershell
+netsh interface portproxy show v4tov4
 ```
 
-当前页签：
-
-1. `Capture`
-   - CSI 历史采集入口。
-   - 深视 3D 相机接入后，应替换此页底层相机读取逻辑。
-
-2. `Label`
-   - 可继续使用。
-   - 从 `data/frames/raw` 加载 RGB 图片并保存 YOLO 标签。
-
-3. `Dataset`
-   - 可继续使用。
-   - 校验、切分、增强数据。
-
-4. `Train`
-   - 可继续使用。
-   - 启动训练、查看日志和曲线、导出 TensorRT engine。
-
-5. `Test`
-   - CSI 历史实时检测入口。
-   - 深视 3D 相机接入后，应替换为 SDK RGB 流。
-
-## 深视 3D 相机接入建议
-
-建议新增一个相机适配脚本，例如：
+应包含：
 
 ```text
-scripts/capture_deepvision_session.py
+0.0.0.0  8001  127.0.0.1  8000
 ```
 
-职责：
+### 端口被占用
 
-- 初始化深视 3D 相机。
-- 获取同步 RGB 帧和深度帧。
-- RGB 帧保存为 `.jpg`。
-- 深度帧保存为 16-bit `.png` 或 SDK 推荐格式。
-- 写入 `frame_manifest.csv` 和 `session_manifest.csv`。
-- 可选：保存 RGB 视频到 `data/raw_videos/`。
-
-建议新增一个实时检测脚本，例如：
-
-```text
-scripts/infer_deepvision_realtime.py
-```
-
-职责：
-
-- 从深视 3D 相机读取 RGB 帧。
-- 使用 `.pt` 或 `.engine` 做 YOLO 检测。
-- 可选：用检测框中心点查询深度，输出 3D 坐标。
-
-## 训练现象排查
-
-如果 `confusion_matrix.png` 看起来全部是 background，先检查：
+查看占用进程：
 
 ```bash
-python3 scripts/check_yolo_labels.py \
-  --images-dir data/dataset/images/val \
-  --labels-dir data/dataset/labels/val
+sudo ss -ltnp | grep :8000
 ```
 
-再看：
-
-```text
-runs/<run_name>/val_batch0_labels.jpg
-runs/<run_name>/val_batch0_pred.jpg
-```
-
-- `labels` 图有框：说明验证集标签被正确读取。
-- `pred` 图无框：说明模型置信度太低或训练不足。
-
-小数据集初期可以临时降低置信度测试：
+停止旧服务：
 
 ```bash
-yolo predict \
-  model=runs/stator_yolov8/weights/best.pt \
-  source=data/dataset/images/val \
-  imgsz=640 \
-  conf=0.05 \
-  device=0
+sudo fuser -k 8000/tcp
 ```
 
-长期解决方案是补数据、提高目标占图比例、提高 `IMGSZ` 或加入 ROI 裁剪。
+然后重新启动网站。
 
-## CSI 旧入口
+### 页面修改后没有变化
 
-以下脚本是旧 CSI 相机流程，保留作参考或备用：
+先重启 Python 服务，再在浏览器中按 `Ctrl+F5` 强制刷新。
 
-- `test_camera_csi.py`
-- `scripts/capture_csi_session.py`
-- GUI 中的 `Capture` 和 `Test` 相机流读取逻辑
+### `favicon.ico` 返回 404
 
-CSI 支持模式：
+这只表示项目暂时没有浏览器页签图标，不影响网站功能。
 
-- `3280x2464@21`
-- `3280x1848@28`
-- `1920x1080@30`
-- `1640x1232@30`
-- `1280x720@60`
+### 训练提示没有图片
 
-## 关键文件
+仅有标签不能训练。必须在网页中框选目标并点击“保存标签”，确保以下两个目录中存在同名文件：
 
-- GUI 工作流：`scripts/stator_dataset_gui.py`
-- 数据校验：`scripts/check_yolo_labels.py`
-- 数据切分：`scripts/split_dataset.py`
-- 数据增强：`scripts/augment_dataset.py`
-- 图片推理：`scripts/infer_image.py`
-- 视频推理：`scripts/infer_video.py`
-- 训练脚本：`train/train_yolov8.sh`
-- TensorRT 导出：`export/export_engine.sh`
-- 数据集配置：`data/dataset.yaml`
-- 旧 CSI 预览：`test_camera_csi.py`
-- 旧 CSI 采集：`scripts/capture_csi_session.py`
+```text
+data/labeling/export/images/
+data/labeling/export/labels/
+```
+
+随后重新执行“检查标签”和“划分数据集”。
+
+### CUDA 显存不足
+
+将批量大小从 `8` 调整为 `4` 或 `2`。必要时将图片尺寸从 `640` 降低为 `416`。
+
+## 推荐工作顺序
+
+```text
+启动网站
+  → 上传图片
+  → 框选定子
+  → 保存全部标签
+  → 检查标签
+  → 划分数据集
+  → 增强训练集（可选）
+  → 先训练 10 轮检查流程
+  → 正式训练 100 轮
+  → 使用 best.pt 推理
+  → 在目标设备导出 TensorRT Engine
+```

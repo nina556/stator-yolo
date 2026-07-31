@@ -12,7 +12,10 @@
       <p class="eyebrow">STATOR · DATASET STUDIO</p>
       <h1>定子视觉标注台</h1>
     </div>
-    <div class="status"><span id="statusDot"></span><span id="status">正在连接…</span></div>
+    <div class="header-actions">
+      <button id="workflowButton">数据与训练</button>
+      <div class="status"><span id="statusDot"></span><span id="status">正在连接…</span></div>
+    </div>
   </header>
 
   <main>
@@ -69,6 +72,48 @@
       </footer>
     </section>
   </main>
+  <section id="workflowPanel" class="workflow-panel" hidden>
+    <div class="workflow-head">
+      <div>
+        <p class="eyebrow">WEB WORKFLOW</p>
+        <h2>数据与训练</h2>
+      </div>
+      <button id="closeWorkflowButton">关闭</button>
+    </div>
+
+    <div id="datasetStats" class="stats-grid"></div>
+
+    <div class="workflow-section">
+      <h3>数据集处理</h3>
+      <p>按顺序检查标签、划分训练集，再按需增强训练图片。</p>
+      <div class="workflow-actions">
+        <button data-job="/api/dataset/validate">检查标签</button>
+        <button data-job="/api/dataset/split">划分数据集 8:1:1</button>
+        <label>增强份数 <input id="augmentCopies" type="number" min="1" max="10" value="2"></label>
+        <button id="augmentButton">增强训练集</button>
+      </div>
+    </div>
+
+    <div class="workflow-section">
+      <h3>训练 YOLOv8n</h3>
+      <div class="workflow-actions">
+        <label>轮数 <input id="epochsInput" type="number" min="1" max="1000" value="100"></label>
+        <label>批量 <input id="batchInput" type="number" min="1" max="128" value="8"></label>
+        <label>图片尺寸
+          <select id="imageSizeInput">
+            <option>416</option><option selected>640</option><option>768</option><option>960</option>
+          </select>
+        </label>
+        <button id="trainButton" class="primary">开始训练</button>
+        <button id="stopJobButton" class="danger">停止任务</button>
+      </div>
+    </div>
+
+    <div class="workflow-section job-section">
+      <div class="panel-title"><span id="jobTitle">任务日志</span><span id="jobState">空闲</span></div>
+      <pre id="jobLog">尚未运行任务。</pre>
+    </div>
+  </section>
   <script src="/app.js"></script>
 </body>
 </html>
