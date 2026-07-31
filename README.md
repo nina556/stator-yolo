@@ -429,6 +429,41 @@ bash export/export_engine.sh runs/stator_yolov8/weights/best.pt
 
 导出的 `.engine` 与设备、CUDA、TensorRT 版本密切相关。建议在最终运行推理的 Jetson 或目标设备上导出，不要假设不同设备生成的 Engine 可以直接通用。
 
+## ONNX 精简部署
+
+远端机器不需要安装 PyTorch 和 Ultralytics 时，可以将最佳模型导出为 ONNX：
+
+```bash
+cd /home/nina/stator-yolo
+source .venv/bin/activate
+
+yolo export \
+  model=runs/stator_yolov8/weights/best.pt \
+  format=onnx \
+  imgsz=960 \
+  simplify=True
+```
+
+首次导出时，Ultralytics可能自动安装 `onnx`、`onnxruntime` 和 `onnxslim`。
+看到 `ONNX: export success` 表示导出成功，模型位于：
+
+```text
+runs/stator_yolov8/weights/best.onnx
+```
+
+将模型复制到精简部署目录：
+
+```bash
+cp runs/stator_yolov8/weights/best.onnx deploy/onnx/best.onnx
+```
+
+然后将整个 `deploy/onnx/` 目录复制到远端机器。部署目录提供基于 ONNX
+Runtime 的图片、视频和普通摄像头推理程序，具体命令见
+`deploy/onnx/README.md`。
+
+`best.onnx` 受 `.gitignore` 保护，不会上传到 GitHub，需要通过 U 盘、
+`scp` 或内部文件服务器单独传输。
+
 ## 项目结构
 
 ```text
@@ -456,6 +491,8 @@ stator-yolo/
 │   └── train_yolov8.sh         # YOLO 训练
 ├── export/
 │   └── export_engine.sh        # TensorRT 导出
+├── deploy/
+│   └── onnx/                   # 不依赖 PyTorch 的精简真机部署包
 ├── data/
 │   ├── frames/raw/             # 上传或采集的源图片
 │   ├── labeling/export/        # 已保存的图片和标签
