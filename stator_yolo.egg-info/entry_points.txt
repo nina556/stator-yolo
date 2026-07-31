@@ -1,0 +1,4 @@
+[console_scripts]
+stator-yolo = stator_yolo.cli:main
+stator-yolo-env = stator_yolo.env_check:main
+stator-yolo-gui = stator_yolo.gui:main

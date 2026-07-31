@@ -148,6 +148,16 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 self.send_json({"ok": True, "label": str(label.relative_to(ROOT))})
                 return
+            if path == "/api/delete":
+                name = safe_name(str(payload.get("name", "")))
+                source = SOURCE_DIR / name
+                if not source.exists():
+                    raise ValueError("Source image does not exist")
+                source.unlink()
+                (EXPORT_IMAGES / name).unlink(missing_ok=True)
+                (EXPORT_LABELS / f"{Path(name).stem}.txt").unlink(missing_ok=True)
+                self.send_json({"ok": True, "name": name})
+                return
             self.send_json({"error": "Not found"}, HTTPStatus.NOT_FOUND)
         except (ValueError, OSError, json.JSONDecodeError, base64.binascii.Error) as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)

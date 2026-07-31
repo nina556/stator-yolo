@@ -83,6 +83,8 @@ button:hover { border-color: #66716e; }
 button:disabled { opacity: .4; cursor: default; }
 button.primary { color: #101510; background: var(--green); border-color: var(--green); font-weight: 800; }
 button.accent { color: #1c1308; background: var(--orange); border-color: var(--orange); font-weight: 800; }
+button.danger { color: #ff8f8f; border-color: #713f46; }
+button.danger:hover { color: #fff; background: #9f3343; border-color: #c64658; }
 .stage {
   position: relative; min-height: 0; overflow: hidden; display: grid; place-items: center;
   background-color: #090b0c;

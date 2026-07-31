@@ -150,12 +150,37 @@ async function save(next = false) {
   if (next && state.index + 1 < state.images.length) await loadImage(state.index + 1);
 }
 
+async function deleteCurrent() {
+  if (state.index < 0) return;
+  const name = state.images[state.index].name;
+  if (!window.confirm(`确定删除“${name}”吗？\n对应的导出图片和标签也会一并删除。`)) return;
+
+  const nextIndex = Math.min(state.index, state.images.length - 2);
+  await api("/api/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  state.image = null;
+  state.boxes = [];
+  state.index = nextIndex;
+  await refresh();
+  if (state.index >= 0) {
+    await loadImage(state.index);
+  } else {
+    canvas.style.display = "none";
+    $("#emptyState").style.display = "";
+    $("#imageMeta").textContent = "";
+  }
+  setStatus(`已删除 ${name}`);
+}
+
 function updateNavigation() {
   const selected = state.index >= 0;
   $("#position").textContent = selected ? `${state.index + 1} / ${state.images.length} · ${state.images[state.index].name}` : "尚未选择图片";
   $("#prevButton").disabled = !selected || state.index === 0;
   $("#nextButton").disabled = !selected || state.index === state.images.length - 1;
-  ["#undoButton", "#clearButton", "#saveButton", "#saveNextButton"].forEach((id) => $(id).disabled = !selected);
+  ["#deleteButton", "#undoButton", "#clearButton", "#saveButton", "#saveNextButton"].forEach((id) => $(id).disabled = !selected);
 }
 
 $("#uploadInput").onchange = async (event) => {
@@ -178,6 +203,7 @@ $("#uploadInput").onchange = async (event) => {
   event.target.value = "";
 };
 $("#refreshButton").onclick = () => refresh();
+$("#deleteButton").onclick = () => deleteCurrent().catch((error) => setStatus(error.message, false));
 $("#undoButton").onclick = () => { state.boxes.pop(); draw(); };
 $("#clearButton").onclick = () => { state.boxes = []; draw(); };
 $("#saveButton").onclick = () => save(false);
