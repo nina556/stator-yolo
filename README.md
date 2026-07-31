@@ -43,6 +43,50 @@
 
 没有 NVIDIA GPU 也能使用图片标注和数据集处理功能，但 CPU 训练速度会明显较慢。
 
+## 更新到 GitHub（不上传本地数据）
+
+仓库通过 `.gitignore` 只同步代码、配置和文档，不上传本地生成的数据。以下内容会保留在当前电脑：
+
+- `data/frames/raw/` 中的原始图片。
+- `data/labeling/export/` 中的标注图片和 YOLO 标签。
+- `data/dataset/images/` 和 `data/dataset/labels/` 中的训练数据集。
+- `data/raw_videos/`、深度数据和采集清单。
+- `runs/` 中的训练结果、推理结果和模型权重。
+- `.pt`、`.onnx` 和 `.engine` 模型文件。
+
+提交前可以运行：
+
+```bash
+cd /home/nina/stator-yolo
+git status --short
+```
+
+输出中不应出现 JPG、PNG、标签 TXT、视频、数据集或模型文件。
+
+WSL 首次向 GitHub 推送时，先登录：
+
+```bash
+gh auth login
+```
+
+依次选择：
+
+```text
+GitHub.com
+HTTPS
+Login with a web browser
+```
+
+之后更新代码：
+
+```bash
+git add .
+git commit -m "Describe this update"
+git push origin main
+```
+
+如果显示 `nothing to commit`，表示没有新的本地代码改动；如果显示 `Everything up-to-date`，表示 GitHub 已是最新版本。
+
 ## 安装
 
 进入 WSL 项目目录：
