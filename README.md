@@ -81,7 +81,7 @@ Login with a web browser
 
 ```bash
 git add .
-git commit -m "Describe this update"
+git commit -m "说明本次更新内容"
 git push origin main
 ```
 
