@@ -162,18 +162,16 @@ http://127.0.0.1:8000
 
 ## 局域网部署
 
-当前局域网入口：
-
-```text
-http://192.168.10.224:8001
-```
+局域网入口不是固定地址。Windows 的局域网 IP 可能在重启、重新连接 Wi-Fi
+或路由器重新分配地址后发生变化，因此每次使用时应先查询当前地址，不要继续使用
+README 或浏览器历史记录中的旧 IP。
 
 网络链路：
 
 ```text
 局域网浏览器
     ↓
-Windows 192.168.10.224:8001
+Windows 当前局域网 IP:8001
     ↓
 Windows portproxy
     ↓
@@ -196,13 +194,48 @@ powershell -ExecutionPolicy Bypass -File .\deploy_intranet.ps1
 - 建立 `8001 → 8000` 端口转发。
 - 注册登录后启动网站的 Windows 计划任务。
 
-其他用户需要连接同一个局域网，并访问：
+### 每次使用：检查并打开局域网网站
 
-```text
-http://192.168.10.224:8001
+先在 WSL 终端确认网站服务已经启动：
+
+```bash
+cd /home/nina/stator-yolo
+source .venv/bin/activate
+python run_web.py --host 0.0.0.0 --port 8000
 ```
 
-如果使用访客 Wi-Fi、路由器开启了客户端隔离，或者电脑 IP 已经变化，其他设备可能无法访问。
+如果提示 `Address already in use`，通常表示服务已由计划任务启动，不需要重复启动。
+可以用下面的命令确认本机网站是否正常；看到 `HTTP 200` 即正常：
+
+```bash
+curl -sS -o /dev/null -w "HTTP %{http_code}\n" http://127.0.0.1:8000/
+```
+
+然后打开 Windows PowerShell，运行以下命令。它会自动获取当前局域网 IP、检查
+`8001` 端口，并在本机浏览器中打开正确的网址：
+
+```powershell
+$lanIp = Get-NetIPConfiguration |
+    Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" } |
+    ForEach-Object { $_.IPv4Address.IPAddress } |
+    Select-Object -First 1
+$url = "http://${lanIp}:8001"
+Write-Host "局域网地址：$url"
+Test-NetConnection 127.0.0.1 -Port 8001
+Start-Process $url
+```
+
+将 PowerShell 显示的“局域网地址”发给其他设备。例如当前 IP 如果是
+`192.168.10.13`，访问地址就是 `http://192.168.10.13:8001`。其他设备必须连接
+同一个局域网；访客 Wi-Fi 或路由器的客户端隔离功能可能阻止设备互相访问。
+
+如果 `TcpTestSucceeded` 显示 `False`，请以管理员身份打开 Windows PowerShell，
+重新运行部署脚本：
+
+```powershell
+cd "\\wsl$\Ubuntu-24.04\home\nina\stator-yolo"
+powershell -ExecutionPolicy Bypass -File .\deploy_intranet.ps1
+```
 
 ### 安全说明
 
